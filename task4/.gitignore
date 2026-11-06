@@ -1,0 +1,6 @@
+target/
+data/
+.env
+.env.*
+build-check.log
+postgres-*.log
