@@ -1,0 +1,76 @@
+{
+  "info": {
+    "name": "Задание 5 — JWT и сессии",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Запускайте запросы по порядку. Регистрация создаёт отдельного клиента. После login проверьте в БД ACTIVE; после refresh — USED и ACTIVE; после повторного refresh — REVOKED и ACTIVE, всего две строки для device_id='postman-login'. SQL: SELECT username, device_id, status, access_token_expiry, refresh_token_expiry FROM user_sessions WHERE device_id='postman-login' AND username='<email из переменной email>';"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:8080"},
+    {"key": "email", "value": ""},
+    {"key": "password", "value": ""}
+  ],
+  "item": [
+    {
+      "name": "0. Регистрация",
+      "event": [
+        {"listen": "prerequest", "script": {"type": "text/javascript", "exec": [
+          "pm.collectionVariables.set('email', 'client-' + Date.now() + '@example.com');",
+          "pm.collectionVariables.set('password', 'X9!sLm2#vQ7z');"
+        ]}},
+        {"listen": "test", "script": {"type": "text/javascript", "exec": [
+          "pm.test('201 и пара токенов', () => { pm.response.to.have.status(201); const p = pm.response.json(); pm.expect(p.accessToken).to.be.a('string'); pm.expect(p.refreshToken).to.be.a('string'); });"
+        ]}}
+      ],
+      "request": {
+        "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{baseUrl}}/auth/register",
+        "body": {"mode": "raw", "raw": "{\"name\":\"Клиент\",\"email\":\"{{email}}\",\"password\":\"{{password}}\",\"deviceId\":\"postman-register\"}", "options": {"raw": {"language": "json"}}}
+      }
+    },
+    {
+      "name": "1. Вход — ACTIVE",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "const p = pm.response.json(); pm.collectionVariables.set('access', p.accessToken); pm.collectionVariables.set('refresh', p.refreshToken);"
+      ]}}],
+      "request": {
+        "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{baseUrl}}/auth/login",
+        "body": {"mode": "raw", "raw": "{\"email\":\"{{email}}\",\"password\":\"{{password}}\",\"deviceId\":\"postman-login\"}", "options": {"raw": {"language": "json"}}}
+      }
+    },
+    {
+      "name": "2. Защищённый endpoint",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('Доступ разрешён', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "GET", "header": [{"key": "Authorization", "value": "Bearer {{access}}"}],
+        "url": "{{baseUrl}}/api/vehicles"
+      }
+    },
+    {
+      "name": "3. Обновление — USED и ACTIVE",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('200 и новая пара', () => { pm.response.to.have.status(200); const p = pm.response.json(); pm.expect(p.accessToken).not.to.eql(pm.collectionVariables.get('access')); pm.expect(p.refreshToken).not.to.eql(pm.collectionVariables.get('refresh')); });",
+        "const p = pm.response.json(); pm.collectionVariables.set('oldRefresh', pm.collectionVariables.get('refresh')); pm.collectionVariables.set('access', p.accessToken); pm.collectionVariables.set('refresh', p.refreshToken);"
+      ]}}],
+      "request": {
+        "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{baseUrl}}/auth/refresh",
+        "body": {"mode": "raw", "raw": "{\"refreshToken\":\"{{refresh}}\"}", "options": {"raw": {"language": "json"}}}
+      }
+    },
+    {
+      "name": "4. Повтор старого refresh — REVOKED и ACTIVE",
+      "event": [{"listen": "test", "script": {"type": "text/javascript", "exec": [
+        "pm.test('401 без новой пары', () => { pm.response.to.have.status(401); const p = pm.response.json(); pm.expect(p).not.to.have.property('accessToken'); pm.expect(p).not.to.have.property('refreshToken'); });"
+      ]}}],
+      "request": {
+        "method": "POST", "header": [{"key": "Content-Type", "value": "application/json"}],
+        "url": "{{baseUrl}}/auth/refresh",
+        "body": {"mode": "raw", "raw": "{\"refreshToken\":\"{{oldRefresh}}\"}", "options": {"raw": {"language": "json"}}}
+      }
+    }
+  ]
+}
